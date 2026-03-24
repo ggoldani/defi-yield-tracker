@@ -6,8 +6,7 @@ import { fetchAllTransactions } from './scanner.js';
 import { enrichTransaction } from './enricher.js';
 import { PriceProvider } from '../prices/provider.js';
 import { TransactionRepo } from '../db/repositories/transaction.repo.js';
-import { PositionRepo } from '../db/repositories/position.repo.js';
-import { KNOWN_POOLS } from '../config/pools.js';
+import { rebuildPositionsForAddressChain } from './positionBuilder.js';
 import { discoverSickleWallet } from './discovery.js';
 import { AddressRepo } from '../db/repositories/address.repo.js';
 
@@ -103,13 +102,10 @@ export async function syncAddressOnChain(
   const priceProvider = new PriceProvider(db);
   let inserted = 0;
 
-  const enrichedByHash = new Map<string, Awaited<ReturnType<typeof enrichTransaction>>>();
   for (const rawTx of uniqueTxs) {
     const enrichedTx = await enrichTransaction(rawTx, addressId, chain.id, sickleAddress, priceProvider);
-    enrichedByHash.set(rawTx.hash, enrichedTx);
     try {
-      txRepo.insert(enrichedTx);
-      inserted++;
+      inserted += txRepo.insert(enrichedTx);
     } catch {
       // INSERT OR IGNORE handles duplicates silently
     }
@@ -124,69 +120,11 @@ export async function syncAddressOnChain(
     updateSyncState(db, addressId, chain.id, lastBlock);
   }
 
-  // 7. Update Positions state
-  const strategyPositions = new Map<string, any>();
-  
-  for (const rawTx of uniqueTxs) {
-    const enrichedTx = enrichedByHash.get(rawTx.hash);
-    if (!enrichedTx) continue;
-    if (!enrichedTx.isFromSickle) continue;
-
-    let matchedPool = undefined;
-    if (rawTx.input && rawTx.input !== '0x') {
-      const hexPayload = rawTx.input.toLowerCase();
-      // Try mapping by explicit LP address
-      matchedPool = KNOWN_POOLS.find(p => p.chainId === chain.id && hexPayload.includes(p.address.replace('0x', '').toLowerCase()));
-      
-      // Fallback for V3 strategies that omit LP address: Match if BOTH underlying tokens are vividly present in the Zap parameters
-      if (!matchedPool) {
-        matchedPool = KNOWN_POOLS.find(p => {
-          if (p.chainId !== chain.id) return false;
-          const t0 = p.token0.replace('0x', '').toLowerCase();
-          const t1 = p.token1.replace('0x', '').toLowerCase();
-          return hexPayload.includes(t0) && hexPayload.includes(t1);
-        });
-      }
-    }
-
-    // Ignore unrecognized sickle transactions
-    if (!matchedPool) continue;
-
-    const poolAddr = matchedPool.address as `0x${string}`;
-    if (!strategyPositions.has(poolAddr)) {
-      strategyPositions.set(poolAddr, {
-        addressId,
-        chainId: chain.id,
-        positionKind: 'v2_lp' as const,
-        nftTokenId: '',
-        protocol: matchedPool.protocol,
-        poolAddress: poolAddr,
-        token0: matchedPool.token0, token1: matchedPool.token1,
-        token0Symbol: matchedPool.token0Symbol, token1Symbol: matchedPool.token1Symbol,
-        isActive: true,
-        entryTimestamp: enrichedTx.timestamp,
-        totalDeposited0: '0', totalDeposited1: '0',
-        totalWithdrawn0: '0', totalWithdrawn1: '0',
-        totalDepositedUsd: 0, totalWithdrawnUsd: 0,
-        totalHarvestedUsd: 0, totalGasCostUsd: 0,
-      });
-    }
-
-    const pos = strategyPositions.get(poolAddr)!;
-    pos.totalGasCostUsd += enrichedTx.gasCostUsd || 0;
-    
-    // Naively update status
-    if (enrichedTx.category === 'exit') pos.isActive = false;
-    if (enrichedTx.category === 'deposit') pos.isActive = true;
-  }
-
-  // Persist inferred positions
-  const posRepo = new PositionRepo(db);
-  for (const pos of strategyPositions.values()) {
+  if (inserted > 0) {
     try {
-      posRepo.upsert(pos);
+      await rebuildPositionsForAddressChain(db, addressId, chain.id, { priceProvider });
     } catch (e) {
-      log.error(`Failed to upsert position: ${(e as Error).message}`);
+      log.error(`Failed to rebuild positions: ${(e as Error).message}`);
     }
   }
 

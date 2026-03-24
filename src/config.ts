@@ -57,6 +57,11 @@ export const SICKLE_CONTRACTS = {
   aerodromeStrategyV2: '0x9699be38e6d54e51a4b36645726fee9cc736eb45' as const,
 };
 
+/** Lowercased strategy `to` addresses for SQL `IN (...)` / inclusion rules. */
+export const SICKLE_STRATEGY_ADDRESSES_LOWER: readonly string[] = [
+  ...new Set(Object.values(SICKLE_CONTRACTS).map((a) => a.toLowerCase())),
+];
+
 // ── Known Protocol Factories ─────────────────────
 // Used for on-chain pool identification via pool.factory() calls
 export const PROTOCOL_FACTORIES: Record<string, Record<number, string>> = {

@@ -1,9 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { IndexedTransaction } from '../../types.js';
+import { SICKLE_STRATEGY_ADDRESSES_LOWER } from '../../config.js';
 
 export class TransactionRepo {
   constructor(private db: Database.Database) {}
 
+  /** @returns 1 if a new row was inserted, 0 if ignored (duplicate). */
   insert(tx: Omit<IndexedTransaction, 'id'>): number {
     const stmt = this.db.prepare(`
       INSERT OR IGNORE INTO transactions (
@@ -37,7 +39,7 @@ export class TransactionRepo {
       tx.addressId,
       tx.isFromSickle ? 1 : 0,
     );
-    return result.lastInsertRowid as number;
+    return result.changes;
   }
 
   findByAddress(addressId: number, opts: { chainId?: number; category?: string; limit?: number } = {}): IndexedTransaction[] {
@@ -74,19 +76,49 @@ export class TransactionRepo {
   }
 
   /**
-   * Sickle strategy txs that may need CL `nft_token_id` from NPM logs (Task 4b).
-   * Caller should further filter to CL-relevant rows (protocol / `to` / pool heuristic).
+   * Rows that may need CL `nft_token_id` from NPM logs (Task 4b).
+   * Includes `is_from_sickle = 1` **or** tracked EOA → strategy with empty `nft_token_id`
+   * (aligns with position rebuild inclusion).
    */
-  findForNftReconciliation(addressId: number, chainId: number): IndexedTransaction[] {
+  findForNftReconciliation(addressId: number, chainId: number, trackedEoaLower: string): IndexedTransaction[] {
+    const strategies = SICKLE_STRATEGY_ADDRESSES_LOWER;
+    const inList = strategies.map(() => '?').join(', ');
     const rows = this.db
       .prepare(
         `SELECT * FROM transactions
          WHERE address_id = ? AND chain_id = ?
-           AND is_from_sickle = 1
            AND category IN ('deposit','withdraw','harvest','compound','exit','rebalance')
-           AND (nft_token_id IS NULL OR TRIM(nft_token_id) = '')`,
+           AND (nft_token_id IS NULL OR TRIM(nft_token_id) = '')
+           AND (
+             is_from_sickle = 1
+             OR (
+               LOWER(from_address) = ?
+               AND LOWER(to_address) IN (${inList})
+             )
+           )`,
       )
-      .all(addressId, chainId) as Record<string, unknown>[];
+      .all(addressId, chainId, trackedEoaLower, ...strategies) as Record<string, unknown>[];
+    return rows.map((row) => this.mapRow(row));
+  }
+
+  /**
+   * Full-history position rebuild: strategy-touching txs for this wallet+chain (dedupe by hash in caller).
+   * @see docs/superpowers/plans/2026-03-24-positions-pnl-accuracy.md — transaction inclusion rule.
+   */
+  findForPositionRebuild(addressId: number, chainId: number): IndexedTransaction[] {
+    const strategies = SICKLE_STRATEGY_ADDRESSES_LOWER;
+    const inList = strategies.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM transactions
+         WHERE address_id = ? AND chain_id = ?
+           AND category IN ('deposit','withdraw','harvest','compound','exit','rebalance')
+           AND (
+             is_from_sickle = 1
+             OR LOWER(to_address) IN (${inList})
+           )`,
+      )
+      .all(addressId, chainId, ...strategies) as Record<string, unknown>[];
     return rows.map((row) => this.mapRow(row));
   }
 

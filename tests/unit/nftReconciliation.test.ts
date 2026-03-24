@@ -12,6 +12,7 @@ import * as logger from '../../src/utils/logger.js';
 const ZERO = '0x0000000000000000000000000000000000000000' as Address;
 const NPM = '0x827922686190790b37229fd06084350e74485b72' as Address;
 const SICKLE = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Address;
+const EOA_TRACKED = '0x1111111111111111111111111111111111111111' as Address;
 const STRATEGY = '0x2f0052779c992c509b0758679b46969418696096' as Address; // aerodromeSlipstreamStrategy
 
 function addrTopic(a: string): `0x${string}` {
@@ -64,7 +65,10 @@ describe('reconcileNftTokenIdsForAddressChain', () => {
 
   function insertClCandidate(opts: { hash?: Hash; nft?: string | null } = {}) {
     const hash = opts.hash ?? (`0x${'aa'.repeat(32)}` as Hash);
-    db.prepare(`INSERT INTO addresses (id, address, label) VALUES (1, ?, 't')`).run(ZERO);
+    db.prepare(`INSERT INTO addresses (id, address, label, sickle_addresses) VALUES (1, ?, 't', ?)`).run(
+      EOA_TRACKED.toLowerCase(),
+      JSON.stringify({ 8453: SICKLE }),
+    );
     db.prepare(
       `INSERT INTO transactions (
         hash, chain_id, block_number, timestamp, from_address, to_address,
@@ -80,8 +84,9 @@ describe('reconcileNftTokenIdsForAddressChain', () => {
     const hash = insertClCandidate();
     getLogs.mockResolvedValue([makeTransferLog(0, ZERO, SICKLE, 4242n, { transactionHash: hash })]);
 
-    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, SICKLE, {
+    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, {
       getLogs,
+      npmAddress: NPM,
     });
 
     expect(updated).toBe(1);
@@ -107,7 +112,7 @@ describe('reconcileNftTokenIdsForAddressChain', () => {
       makeTransferLog(1, router, SICKLE, 99n, { transactionHash: hash }),
     ]);
 
-    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, SICKLE, { getLogs });
+    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, { getLogs, npmAddress: NPM });
     expect(updated).toBe(1);
     const row = db.prepare('SELECT nft_token_id FROM transactions WHERE hash = ?').get(hash) as {
       nft_token_id: string | null;
@@ -122,7 +127,7 @@ describe('reconcileNftTokenIdsForAddressChain', () => {
       makeTransferLog(1, ZERO, SICKLE, 2n, { transactionHash: hash }),
     ]);
 
-    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, SICKLE, { getLogs });
+    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, { getLogs, npmAddress: NPM });
     expect(updated).toBe(0);
     expect(logger.log.warn).toHaveBeenCalled();
     const warnMsg = vi.mocked(logger.log.warn).mock.calls[0][0] as string;
@@ -138,14 +143,17 @@ describe('reconcileNftTokenIdsForAddressChain', () => {
     const hash = insertClCandidate({ nft: '7' });
     getLogs.mockResolvedValue([makeTransferLog(0, ZERO, SICKLE, 99n, { transactionHash: hash })]);
 
-    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, SICKLE, { getLogs });
+    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, { getLogs, npmAddress: NPM });
     expect(updated).toBe(0);
     expect(getLogs).not.toHaveBeenCalled();
   });
 
   it('skips non-CL-relevant rows (no getLogs)', async () => {
     const hash = `0x${'cc'.repeat(32)}` as Hash;
-    db.prepare(`INSERT INTO addresses (id, address, label) VALUES (1, ?, 't')`).run(ZERO);
+    db.prepare(`INSERT INTO addresses (id, address, label, sickle_addresses) VALUES (1, ?, 't', ?)`).run(
+      EOA_TRACKED.toLowerCase(),
+      JSON.stringify({ 8453: SICKLE }),
+    );
     db.prepare(
       `INSERT INTO transactions (
         hash, chain_id, block_number, timestamp, from_address, to_address,
@@ -155,7 +163,7 @@ describe('reconcileNftTokenIdsForAddressChain', () => {
       ) VALUES (?, 8453, 100, 1, ?, ?, '0', '0', '0', 0, 'deposit', 'Aerodrome Farm V2', NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, 1, 1)`,
     ).run(hash, SICKLE, '0x9699be38e6d54e51a4b36645726fee9cc736eb45', 1);
 
-    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, SICKLE, { getLogs });
+    const updated = await reconcileNftTokenIdsForAddressChain(db, 1, 8453, { getLogs, npmAddress: NPM });
     expect(updated).toBe(0);
     expect(getLogs).not.toHaveBeenCalled();
   });

@@ -3,14 +3,14 @@
  *
  * **Resolution order (same tx only; block-wide scan not implemented — too ambiguous):**
  * 1. Skip if DB row already has non-empty `nft_token_id`.
- * 2. Load candidate txs (`TransactionRepo.findForNftReconciliation`), then keep **CL-relevant** only
+ * 2. Load candidate txs (`TransactionRepo.findForNftReconciliation` — includes EOA→strategy rows with empty NFT id), then keep **CL-relevant** only
  *    (`isClRelevantTx`: Slipstream / NftFarm strategy `to`, protocol hints, or known Slipstream pool row).
  * 3. For each tx: `getLogs` with `fromBlock = toBlock = blockNumber`, `address = npm`, `topics = [ERC721 Transfer]`.
  *    Keep logs whose `transactionHash` matches the tx. Sort by `logIndex` ASC.
  * 4. Decode IERC721 `Transfer(from,to,tokenId)`. **Plausible** ids:
- *    - Any transfer with `from === sickle` or `to === sickle`, or mint-to-sickle (`from === zero && to === sickle`).
+ *    - Any transfer involving **tracked Sickle or tracked EOA** (mint to either: `from === zero && to ∈ owners`).
  * 5. If exactly one distinct `tokenId` among plausible → persist via `updateNftTokenId`.
- *    If multiple plausible ids but exactly one distinct id from **mints to sickle** (`from === zero && to === sickle`) → use that.
+ *    If multiple plausible ids but exactly one distinct id from **mints to an owner** (`from === zero && to ∈ owners`) → use that.
  *    Otherwise → **no write**; structured `log.warn` (`hash`, `chainId`, `reason`).
  *
  * **Task 4** should call this before aggregating CL positions. No `sync.ts` hook in Task 4b.
@@ -28,6 +28,7 @@ import {
 import { base, polygon } from 'viem/chains';
 import { CHAINS, SICKLE_CONTRACTS } from '../config.js';
 import { KNOWN_POOLS } from '../config/pools.js';
+import { AddressRepo } from '../db/repositories/address.repo.js';
 import { TransactionRepo } from '../db/repositories/transaction.repo.js';
 import type { IndexedTransaction } from '../types.js';
 import { log } from '../utils/logger.js';
@@ -114,12 +115,12 @@ function tryDecodeNpmTransfer(l: Log): Omit<DecodedRow, 'logIndex'> | null {
   }
 }
 
-function pickTokenId(sorted: DecodedRow[], sickleLo: string): { id: string } | 'ambiguous' | 'none' {
-  const involving = sorted.filter(
-    (l) =>
-      l.from === sickleLo ||
-      l.to === sickleLo ||
-      (l.from === ZERO && l.to === sickleLo),
+function pickTokenId(sorted: DecodedRow[], ownersLo: readonly string[]): { id: string } | 'ambiguous' | 'none' {
+  if (ownersLo.length === 0) return 'none';
+  const involving = sorted.filter((l) =>
+    ownersLo.some(
+      (o) => l.from === o || l.to === o || (l.from === ZERO && l.to === o),
+    ),
   );
   const uniqueInvolving = [...new Set(involving.map((l) => l.tokenId))];
   if (uniqueInvolving.length === 1) {
@@ -128,8 +129,8 @@ function pickTokenId(sorted: DecodedRow[], sickleLo: string): { id: string } | '
   if (uniqueInvolving.length === 0) {
     return 'none';
   }
-  const mintToSickle = sorted.filter((l) => l.from === ZERO && l.to === sickleLo);
-  const mintIds = [...new Set(mintToSickle.map((l) => l.tokenId))];
+  const mintToOwner = sorted.filter((l) => l.from === ZERO && ownersLo.includes(l.to));
+  const mintIds = [...new Set(mintToOwner.map((l) => l.tokenId))];
   if (mintIds.length === 1) {
     return { id: mintIds[0]! };
   }
@@ -140,7 +141,7 @@ async function resolveTokenIdForTx(
   hash: Hash,
   blockNumber: number,
   npm: Address,
-  sickleLo: string,
+  ownersLo: readonly string[],
   getLogs: NftReconciliationGetLogs,
 ): Promise<{ id: string } | 'ambiguous' | 'none'> {
   const logs = await getLogs({
@@ -163,10 +164,12 @@ async function resolveTokenIdForTx(
     }
   }
 
-  return pickTokenId(decoded, sickleLo);
+  return pickTokenId(decoded, ownersLo);
 }
 
 /**
+ * Resolves NPM `tokenId` from logs for tracked address + chain. Loads EOA + Sickle from `addresses`.
+ *
  * @param options.getLogs — inject for tests; default uses `CHAIN.rpcUrl` + viem `getLogs`.
  * @param options.npmAddress — override NPM (e.g. tests); default `CHAINS[chainId].nftPositionManager`.
  */
@@ -174,7 +177,6 @@ export async function reconcileNftTokenIdsForAddressChain(
   db: Database.Database,
   addressId: number,
   chainId: number,
-  sickleAddress: string,
   options?: {
     getLogs?: NftReconciliationGetLogs;
     npmAddress?: Address;
@@ -185,10 +187,19 @@ export async function reconcileNftTokenIdsForAddressChain(
     return 0;
   }
 
-  const sickleLo = sickleAddress.toLowerCase();
+  const addr = new AddressRepo(db).findById(addressId);
+  if (!addr) {
+    return 0;
+  }
+
+  const eoaLo = addr.address.toLowerCase();
+  const sickleRaw = addr.sickleAddresses[chainId] as string | undefined;
+  const sickleLo = sickleRaw ? sickleRaw.toLowerCase() : '';
+  const ownersLo = [...new Set([sickleLo, eoaLo].filter(Boolean))];
+
   const getLogs = options?.getLogs ?? createDefaultGetLogs(chainId);
   const repo = new TransactionRepo(db);
-  const candidates = repo.findForNftReconciliation(addressId, chainId).filter(isClRelevantTx);
+  const candidates = repo.findForNftReconciliation(addressId, chainId, eoaLo).filter(isClRelevantTx);
 
   let updated = 0;
   for (const tx of candidates) {
@@ -196,7 +207,7 @@ export async function reconcileNftTokenIdsForAddressChain(
       tx.hash as Hash,
       tx.blockNumber,
       npm,
-      sickleLo,
+      ownersLo,
       getLogs,
     );
 

@@ -8,6 +8,10 @@ function asPositionKind(value: unknown): PositionKind {
 export class PositionRepo {
   constructor(private db: Database.Database) {}
 
+  deleteByAddressAndChain(addressId: number, chainId: number): void {
+    this.db.prepare('DELETE FROM positions WHERE address_id = ? AND chain_id = ?').run(addressId, chainId);
+  }
+
   upsert(position: Omit<Position, 'id'>): number {
     const stmt = this.db.prepare(`
       INSERT INTO positions (
