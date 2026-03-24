@@ -29,3 +29,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Price provider with SQLite caching layer (hour-rounded timestamps)
 - Gas cost USD calculator using native currency prices
 - DeFiLlama live API tests (4 tests)
+- PnL calculator with realized/unrealized decomposition (avoids double-counting withdrawals)
+- PnL unit tests covering 6 scenarios: profit, loss, zero, IL, partial withdrawals (6 tests)

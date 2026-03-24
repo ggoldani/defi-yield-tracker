@@ -14,6 +14,7 @@ export function formatUsd(value: number): string {
 }
 
 export function formatPercent(value: number): string {
+  if (!value || isNaN(value)) return '0.00%';
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
