@@ -161,3 +161,32 @@ export async function syncAddress(
 
   return results;
 }
+
+/**
+ * Recompute `positions` from existing `transactions` for this wallet; **no** explorer tx fetch
+ * (avoids API quota). Same rebuild path as post-insert sync (`rebuildPositionsForAddressChain` +
+ * shared `PriceProvider`). RPC may still be used inside NFT reconciliation for CL candidates.
+ */
+export async function rebuildPositionsOnlyForAddress(
+  db: Database.Database,
+  address: TrackedAddress,
+  chainIds?: number[],
+): Promise<void> {
+  const priceProvider = new PriceProvider(db);
+  const targetChains = chainIds
+    ? chainIds.map((id) => CHAINS[id]).filter(Boolean)
+    : Object.values(CHAINS);
+  const addressId = address.id!;
+
+  for (const chain of targetChains) {
+    log.info(
+      `[rebuild only] ${address.label || address.address} on ${chain.name} — ` +
+        'recomputing positions from SQLite (no explorer tx fetch)',
+    );
+    try {
+      await rebuildPositionsForAddressChain(db, addressId, chain.id, { priceProvider });
+    } catch (e) {
+      log.error(`Failed to rebuild positions: ${(e as Error).message}`);
+    }
+  }
+}

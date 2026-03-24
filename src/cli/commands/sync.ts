@@ -1,7 +1,8 @@
 import type { Command } from 'commander';
+import { CHAINS } from '../../config.js';
 import { getDb } from '../../db/connection.js';
 import { AddressRepo } from '../../db/repositories/address.repo.js';
-import { syncAddress } from '../../indexer/sync.js';
+import { rebuildPositionsOnlyForAddress, syncAddress } from '../../indexer/sync.js';
 import { log } from '../../utils/logger.js';
 
 export function setupSyncCommand(program: Command): void {
@@ -9,7 +10,16 @@ export function setupSyncCommand(program: Command): void {
     .command('sync [address_id]')
     .description('Sync on-chain transactions for tracked addresses')
     .option('-c, --chain <id>', 'Only sync a specific chain ID (e.g., 8453 for Base)')
-    .action(async (addressIdStr?: string, options?: { chain?: string }) => {
+    .option(
+      '-r, --rebuild-positions',
+      'Skip explorer fetch; recompute positions from existing transactions only (decoder/DB repair/migration). If set, overrides normal sync fetch.',
+      false,
+    )
+    .action(
+      async (
+        addressIdStr?: string,
+        options?: { chain?: string; rebuildPositions?: boolean },
+      ) => {
       try {
         const db = getDb();
         const repo = new AddressRepo(db);
@@ -29,21 +39,37 @@ export function setupSyncCommand(program: Command): void {
           }
         }
 
-        const chainIds = options?.chain ? [parseInt(options.chain, 10)] : undefined;
-        if (chainIds && isNaN(chainIds[0])) {
-          throw new Error('Chain ID must be a number');
+        let chainIds: number[] | undefined;
+        if (options?.chain !== undefined) {
+          const id = parseInt(options.chain, 10);
+          if (Number.isNaN(id)) throw new Error('Chain ID must be a number');
+          if (!CHAINS[id]) {
+            const supported = Object.keys(CHAINS).join(', ');
+            throw new Error(`Unknown or unsupported chain ID: ${options.chain} (supported: ${supported})`);
+          }
+          chainIds = [id];
         }
 
-        log.info(`Syncing ${addresses.length} address(es)...`);
+        const rebuildOnly = options?.rebuildPositions === true;
 
-        for (const addr of addresses) {
-          await syncAddress(db, addr, chainIds);
+        if (rebuildOnly) {
+          log.info(`Rebuilding positions for ${addresses.length} address(es) (no new tx fetch)...`);
+          for (const addr of addresses) {
+            await rebuildPositionsOnlyForAddress(db, addr, chainIds);
+          }
+          log.success('Position rebuild complete!');
+        } else {
+          log.info(`Syncing ${addresses.length} address(es)...`);
+          for (const addr of addresses) {
+            await syncAddress(db, addr, chainIds);
+          }
+          log.success('Sync complete!');
         }
-        
-        log.success('Sync complete!');
       } catch (err) {
         if (err instanceof Error) {
-          log.error(`Sync failed: ${err.message}`);
+          const mode =
+            options?.rebuildPositions === true ? 'Position rebuild' : 'Sync';
+          log.error(`${mode} failed: ${err.message}`);
         }
       }
     });
