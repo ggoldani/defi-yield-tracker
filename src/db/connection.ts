@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { DB_PATH } from '../config.js';
 import { initializeSchema } from './schema.js';
+import { migrate } from './migrate.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -14,6 +15,7 @@ export function getDb(path?: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   initializeSchema(db);
+  migrate(db);
   return db;
 }
 

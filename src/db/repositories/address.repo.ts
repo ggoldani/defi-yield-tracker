@@ -64,6 +64,16 @@ export class AddressRepo {
       .run(JSON.stringify(sickles), id);
   }
 
+  remove(id: number): void {
+    const tx = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM sync_state WHERE address_id = ?').run(id);
+      this.db.prepare('DELETE FROM positions WHERE address_id = ?').run(id);
+      this.db.prepare('DELETE FROM transactions WHERE address_id = ?').run(id);
+      this.db.prepare('DELETE FROM addresses WHERE id = ?').run(id);
+    });
+    tx();
+  }
+
   private mapRow(row: Record<string, unknown>): TrackedAddress {
     return {
       id: row.id as number,

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { initializeSchema } from '../../src/db/schema.js';
+import { migrate, SCHEMA_USER_VERSION } from '../../src/db/migrate.js';
 
 describe('Database Schema', () => {
   let db: Database.Database;
@@ -26,6 +27,12 @@ describe('Database Schema', () => {
       expect(tableNames).toContain('positions');
       expect(tableNames).toContain('price_cache');
       expect(tableNames).toContain('sync_state');
+    });
+
+    it('after migrate, user_version matches SCHEMA_USER_VERSION', () => {
+      initializeSchema(db);
+      migrate(db);
+      expect(Number(db.pragma('user_version', { simple: true }))).toBe(SCHEMA_USER_VERSION);
     });
 
     it('creates all required indexes', () => {

@@ -31,6 +31,7 @@ export function initializeSchema(db: Database.Database): void {
       amount1 TEXT,
       reward_token TEXT,
       reward_amount TEXT,
+      nft_token_id TEXT,
       address_id INTEGER NOT NULL,
       is_from_sickle INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (address_id) REFERENCES addresses(id),
@@ -59,8 +60,10 @@ export function initializeSchema(db: Database.Database): void {
       total_harvested_usd REAL NOT NULL DEFAULT 0,
       total_gas_cost_usd REAL NOT NULL DEFAULT 0,
       current_value_usd REAL,
+      position_kind TEXT NOT NULL DEFAULT 'v2_lp',
+      nft_token_id TEXT NOT NULL DEFAULT '',
       FOREIGN KEY (address_id) REFERENCES addresses(id),
-      UNIQUE(address_id, chain_id, pool_address)
+      UNIQUE(address_id, chain_id, pool_address, nft_token_id)
     );
 
     CREATE TABLE IF NOT EXISTS price_cache (

@@ -10,8 +10,8 @@ export class TransactionRepo {
         hash, chain_id, block_number, timestamp, from_address, to_address,
         value, gas_used, gas_price, gas_cost_usd, category, protocol,
         pool_address, token0, token1, amount0, amount1,
-        reward_token, reward_amount, address_id, is_from_sickle
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reward_token, reward_amount, nft_token_id, address_id, is_from_sickle
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
       tx.hash,
@@ -33,6 +33,7 @@ export class TransactionRepo {
       tx.amount1 || null,
       tx.rewardToken || null,
       tx.rewardAmount || null,
+      tx.nftTokenId ?? null,
       tx.addressId,
       tx.isFromSickle ? 1 : 0,
     );
@@ -101,6 +102,7 @@ export class TransactionRepo {
       amount1: (row.amount1 as string) || undefined,
       rewardToken: (row.reward_token as IndexedTransaction['rewardToken']) || undefined,
       rewardAmount: (row.reward_amount as string) || undefined,
+      nftTokenId: (row.nft_token_id as string) || undefined,
       addressId: row.address_id as number,
       isFromSickle: Boolean(row.is_from_sickle),
     };

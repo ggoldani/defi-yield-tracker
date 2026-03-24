@@ -6,6 +6,7 @@ import { fetchAllTransactions } from './scanner.js';
 import { enrichTransaction } from './enricher.js';
 import { TransactionRepo } from '../db/repositories/transaction.repo.js';
 import { PositionRepo } from '../db/repositories/position.repo.js';
+import { KNOWN_POOLS } from '../config/pools.js';
 
 /**
  * Sync state tracking — stores last synced block per address per chain.
@@ -123,23 +124,43 @@ export async function syncAddressOnChain(
   }
 
   // 7. Update Positions state
-  const posRepo = new PositionRepo(db);
-  // group enriched transactions by the Sickle Strategy target
   const strategyPositions = new Map<string, any>();
   
   for (const rawTx of uniqueTxs) {
     const enrichedTx = enrichTransaction(rawTx, addressId, chain.id, sickleAddress);
     if (!enrichedTx.isFromSickle) continue;
 
-    const poolAddr = enrichedTx.to;
+    let matchedPool = undefined;
+    if (rawTx.input && rawTx.input !== '0x') {
+      const hexPayload = rawTx.input.toLowerCase();
+      // Try mapping by explicit LP address
+      matchedPool = KNOWN_POOLS.find(p => p.chainId === chain.id && hexPayload.includes(p.address.replace('0x', '').toLowerCase()));
+      
+      // Fallback for V3 strategies that omit LP address: Match if BOTH underlying tokens are vividly present in the Zap parameters
+      if (!matchedPool) {
+        matchedPool = KNOWN_POOLS.find(p => {
+          if (p.chainId !== chain.id) return false;
+          const t0 = p.token0.replace('0x', '').toLowerCase();
+          const t1 = p.token1.replace('0x', '').toLowerCase();
+          return hexPayload.includes(t0) && hexPayload.includes(t1);
+        });
+      }
+    }
+
+    // Ignore unrecognized sickle transactions
+    if (!matchedPool) continue;
+
+    const poolAddr = matchedPool.address as `0x${string}`;
     if (!strategyPositions.has(poolAddr)) {
       strategyPositions.set(poolAddr, {
         addressId,
         chainId: chain.id,
-        protocol: 'Sickle Strategy',
+        positionKind: 'v2_lp' as const,
+        nftTokenId: '',
+        protocol: matchedPool.protocol,
         poolAddress: poolAddr,
-        token0: '0x000000', token1: '0x000001', // Placeholders
-        token0Symbol: 'TKN0', token1Symbol: 'TKN1',
+        token0: matchedPool.token0, token1: matchedPool.token1,
+        token0Symbol: matchedPool.token0Symbol, token1Symbol: matchedPool.token1Symbol,
         isActive: true,
         entryTimestamp: enrichedTx.timestamp,
         totalDeposited0: '0', totalDeposited1: '0',
@@ -149,7 +170,7 @@ export async function syncAddressOnChain(
       });
     }
 
-    const pos = strategyPositions.get(poolAddr);
+    const pos = strategyPositions.get(poolAddr)!;
     pos.totalGasCostUsd += enrichedTx.gasCostUsd || 0;
     
     // Naively update status
@@ -158,6 +179,7 @@ export async function syncAddressOnChain(
   }
 
   // Persist inferred positions
+  const posRepo = new PositionRepo(db);
   for (const pos of strategyPositions.values()) {
     try {
       posRepo.upsert(pos);

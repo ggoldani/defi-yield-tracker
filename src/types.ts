@@ -35,6 +35,9 @@ export type TxCategory =
   | 'approval'
   | 'unknown';
 
+// ── Position kind (LP vs concentrated liquidity NFT) ─
+export type PositionKind = 'v2_lp' | 'v3_nft';
+
 // ── Indexed Transaction ───────────────────────────
 export interface IndexedTransaction {
   id?: number;
@@ -57,6 +60,8 @@ export interface IndexedTransaction {
   amount1?: string;
   rewardToken?: Address;
   rewardAmount?: string;
+  /** Decimal string token id when known (CL); omit or null for non-NFT txs */
+  nftTokenId?: string | null;
   addressId: number;
   isFromSickle: boolean;
 }
@@ -66,6 +71,9 @@ export interface Position {
   id?: number;
   addressId: number;
   chainId: number;
+  positionKind: PositionKind;
+  /** Empty string for V2 LP; decimal NFT id for V3 / Slipstream */
+  nftTokenId: string;
   protocol: string;
   poolAddress: Address;
   token0: Address;
