@@ -17,6 +17,8 @@ export const CHAINS: Record<number, ChainConfig> = {
     explorerApiKey: '', // Not required for Blockscout
     sickleFactory: '0x71D234A3e1dfC161cc1d081E6496e76627baAc31',
     blockTime: 2,
+    // Aerodrome Slipstream `NonfungiblePositionManager` on Base (deployment list / vfat; verify on BaseScan "Aerodrome: SlipStream").
+    nftPositionManager: '0x827922686190790b37229fd06084350E74485b72',
   },
   137: {
     id: 137,
@@ -27,6 +29,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     explorerApiKey: '', // Not required for Blockscout
     sickleFactory: '0x71D234A3e1dfC161cc1d081E6496e76627baAc31',
     blockTime: 2,
+    // TODO: verify Polygon CL NPM (Uniswap v3 / Aerodrome) before enabling reconciliation on 137.
   },
 };
 
@@ -51,6 +54,7 @@ export const SICKLE_CONTRACTS = {
   rebalanceStrategy: '0x75d57c8d1d16d1045a33dd127929da4f52d59a16' as const,
   multiFarmStrategy: '0x0ce03650ad3699cacf30200e8c7c5d1c071c48e2' as const,
   aerodromeSlipstreamStrategy: '0x2f0052779c992c509b0758679b46969418696096' as const,
+  aerodromeStrategyV2: '0x9699be38e6d54e51a4b36645726fee9cc736eb45' as const,
 };
 
 // ── Known Protocol Factories ─────────────────────

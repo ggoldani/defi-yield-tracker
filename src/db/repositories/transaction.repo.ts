@@ -73,6 +73,36 @@ export class TransactionRepo {
     return rows.map((row) => this.mapRow(row));
   }
 
+  /**
+   * Sickle strategy txs that may need CL `nft_token_id` from NPM logs (Task 4b).
+   * Caller should further filter to CL-relevant rows (protocol / `to` / pool heuristic).
+   */
+  findForNftReconciliation(addressId: number, chainId: number): IndexedTransaction[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM transactions
+         WHERE address_id = ? AND chain_id = ?
+           AND is_from_sickle = 1
+           AND category IN ('deposit','withdraw','harvest','compound','exit','rebalance')
+           AND (nft_token_id IS NULL OR TRIM(nft_token_id) = '')`,
+      )
+      .all(addressId, chainId) as Record<string, unknown>[];
+    return rows.map((row) => this.mapRow(row));
+  }
+
+  /** Sets `nft_token_id` only when currently empty (idempotent). */
+  updateNftTokenId(hash: string, chainId: number, nftTokenId: string): number {
+    const result = this.db
+      .prepare(
+        `UPDATE transactions
+         SET nft_token_id = ?
+         WHERE hash = ? AND chain_id = ?
+           AND (nft_token_id IS NULL OR TRIM(nft_token_id) = '')`,
+      )
+      .run(nftTokenId, hash, chainId);
+    return Number(result.changes);
+  }
+
   getLastBlock(addressId: number, chainId: number): number {
     const row = this.db
       .prepare('SELECT MAX(block_number) as last_block FROM transactions WHERE address_id = ? AND chain_id = ?')

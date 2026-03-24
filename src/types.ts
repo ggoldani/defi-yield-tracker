@@ -10,6 +10,11 @@ export interface ChainConfig {
   explorerApiKey: string;
   sickleFactory: Address;
   blockTime: number; // avg seconds per block
+  /**
+   * Aerodrome Slipstream / CL `NonfungiblePositionManager` (ERC-721) for NPM `Transfer` log reconciliation.
+   * Optional per chain — missing = skip NFT log reconciliation on that chain.
+   */
+  nftPositionManager?: Address;
 }
 
 // ── Tracked Address ───────────────────────────────
