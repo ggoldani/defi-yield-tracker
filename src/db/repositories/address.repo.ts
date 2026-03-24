@@ -20,6 +20,23 @@ export class AddressRepo {
     return this.mapRow(row);
   }
 
+  /**
+   * Updates or adds a Sickle wallet address for a specific chain
+   */
+  updateSickleAddress(id: number, chainId: number, sickleAddress: string): void {
+    const record = this.findById(id);
+    if (!record) throw new Error(`Address with ID ${id} not found`);
+
+    const updatedAddresses = {
+      ...record.sickleAddresses,
+      [chainId]: sickleAddress,
+    };
+
+    this.db.prepare(
+      `UPDATE addresses SET sickle_addresses = ? WHERE id = ?`
+    ).run(JSON.stringify(updatedAddresses), id);
+  }
+
   findById(id: number): TrackedAddress | undefined {
     const row = this.db
       .prepare('SELECT * FROM addresses WHERE id = ?')

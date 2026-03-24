@@ -31,3 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DeFiLlama live API tests (4 tests)
 - PnL calculator with realized/unrealized decomposition (avoids double-counting withdrawals)
 - PnL unit tests covering 6 scenarios: profit, loss, zero, IL, partial withdrawals (6 tests)
+- Basic test suite for CLI via vitest (`cli.test.ts`)
+- Configured native `dyt` executable mapping to CLI entrypoint (`bin/dyt.js`)
+- `dyt add`: CLI command for adding new tracked 0x wallets
+- `dyt sync`: Triggers indexing engine for all or specific wallets/chains
+- `dyt positions`: Prints active & historical Sickle LP positions in a formatted table
+- `dyt pnl`: Renders realization, impermanent loss, net PnL, and ROI analytics
+- `dyt history`: Shows recent transaction history with category and gas costs

@@ -31,6 +31,11 @@ function updateSyncState(
   ).run(addressId, chainId, lastBlock);
 }
 
+import { discoverSickleWallet } from './discovery.js';
+import { AddressRepo } from '../db/repositories/address.repo.js';
+
+// ... (keep getLastSyncedBlock and updateSyncState imports/functions)
+
 export interface SyncResult {
   chainName: string;
   newTransactions: number;
@@ -42,11 +47,12 @@ export interface SyncResult {
  * Syncs all transactions for a tracked address on a specific chain.
  *
  * Flow:
- * 1. Get last synced block from sync_state
- * 2. Fetch all new transactions from block explorer
- * 3. Enrich and categorize each transaction
- * 4. Insert into transactions table (INSERT OR IGNORE for idempotency)
- * 5. Update sync_state with last block
+ * 1. Discover Sickle wallet if not already known
+ * 2. Get last synced block from sync_state
+ * 3. Fetch all new transactions from block explorer
+ * 4. Enrich and categorize each transaction
+ * 5. Insert into transactions table (INSERT OR IGNORE for idempotency)
+ * 6. Update sync_state with last block
  */
 export async function syncAddressOnChain(
   db: Database.Database,
@@ -54,7 +60,20 @@ export async function syncAddressOnChain(
   chain: ChainConfig,
 ): Promise<SyncResult> {
   const addressId = address.id!;
-  const sickleAddress = address.sickleAddresses[chain.id] || null;
+  
+  // 1. Discovery phase
+  let sickleAddress = address.sickleAddresses[chain.id];
+  if (!sickleAddress) {
+    const discovered = await discoverSickleWallet(chain, address.address);
+    if (discovered) {
+      log.info(`  Discovered new Sickle wallet on ${chain.name}: ${discovered}`);
+      const addressRepo = new AddressRepo(db);
+      addressRepo.updateSickleAddress(addressId, chain.id, discovered);
+      sickleAddress = discovered as `0x${string}`;
+      address.sickleAddresses[chain.id] = discovered as `0x${string}`; // update local object
+    }
+  }
+
   const startBlock = getLastSyncedBlock(db, addressId, chain.id) + 1;
 
   log.info(`Syncing ${address.label || address.address} on ${chain.name} from block ${startBlock}...`);
