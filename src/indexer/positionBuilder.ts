@@ -15,15 +15,17 @@
  */
 
 import type Database from 'better-sqlite3';
-import type { Address } from 'viem';
+import { createPublicClient, http, type Address } from 'viem';
 import type { IndexedTransaction, Position, PositionKind } from '../types.js';
 import { AddressRepo } from '../db/repositories/address.repo.js';
 import { PositionRepo } from '../db/repositories/position.repo.js';
 import { TransactionRepo } from '../db/repositories/transaction.repo.js';
 import { roundPriceTimestampToHour } from '../db/repositories/price.repo.js';
 import { KNOWN_POOLS } from '../config/pools.js';
+import { CHAINS } from '../config.js';
 import { PriceProvider } from '../prices/provider.js';
 import { log } from '../utils/logger.js';
+import { estimatePositionValueUsd } from '../analytics/positions.js';
 import { isClRelevantTx } from './nftReconciliation.js';
 import { reconcileNftTokenIdsForAddressChain } from './nftReconciliation.js';
 
@@ -124,6 +126,8 @@ export type PositionRebuildDeps = {
   priceProvider?: PriceProvider;
   /** Passed to `reconcileNftTokenIdsForAddressChain` (e.g. mock `getLogs`). */
   reconcileOptions?: Parameters<typeof reconcileNftTokenIdsForAddressChain>[3];
+  /** When true, skip Task 5a RPC valuation (`current_value_usd` stays 0 for active rows) — unit tests. */
+  skipSpotValuation?: boolean;
 };
 
 /**
@@ -264,6 +268,14 @@ export async function rebuildPositionsForAddressChain(
   const posRepo = new PositionRepo(db);
   posRepo.deleteByAddressAndChain(addressId, chainId);
 
+  const chain = CHAINS[chainId];
+  const publicClient =
+    !deps?.skipSpotValuation && chain
+      ? createPublicClient({ transport: http(chain.rpcUrl) })
+      : null;
+  const lpBalanceHolder =
+    (tracked.sickleAddresses[chainId] as Address | undefined) ?? tracked.address;
+
   for (const agg of groups.values()) {
     const row: Omit<Position, 'id'> = {
       addressId,
@@ -288,6 +300,20 @@ export async function rebuildPositionsForAddressChain(
       totalHarvestedUsd: agg.totalHarvestedUsd,
       totalGasCostUsd: agg.totalGasCostUsd,
     };
+
+    if (!row.isActive) {
+      row.currentValueUsd = 0;
+    } else if (deps?.skipSpotValuation || !chain || !publicClient) {
+      row.currentValueUsd = 0;
+    } else {
+      row.currentValueUsd = await estimatePositionValueUsd(row, {
+        publicClient,
+        priceProvider,
+        chain,
+        lpBalanceHolder,
+      });
+    }
+
     posRepo.upsert(row);
   }
 }

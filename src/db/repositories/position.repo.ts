@@ -56,7 +56,7 @@ export class PositionRepo {
       position.totalWithdrawnUsd,
       position.totalHarvestedUsd,
       position.totalGasCostUsd,
-      position.currentValueUsd || null,
+      position.currentValueUsd === undefined ? null : position.currentValueUsd,
       position.positionKind,
       position.nftTokenId ?? '',
     );
@@ -120,7 +120,10 @@ export class PositionRepo {
       totalWithdrawnUsd: row.total_withdrawn_usd as number,
       totalHarvestedUsd: row.total_harvested_usd as number,
       totalGasCostUsd: row.total_gas_cost_usd as number,
-      currentValueUsd: (row.current_value_usd as number) || undefined,
+      currentValueUsd:
+        row.current_value_usd === null || row.current_value_usd === undefined
+          ? undefined
+          : Number(row.current_value_usd),
     };
   }
 }

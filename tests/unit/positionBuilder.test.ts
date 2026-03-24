@@ -190,6 +190,7 @@ describe('rebuildPositionsForAddressChain', () => {
     const getHistoricalUsdBatch = vi.fn().mockResolvedValue(priceMap);
 
     await rebuildPositionsForAddressChain(db, 1, 8453, {
+      skipSpotValuation: true,
       priceProvider: { getHistoricalUsdBatch } as never,
     });
 
@@ -249,6 +250,7 @@ describe('rebuildPositionsForAddressChain', () => {
     const getLogs = vi.fn().mockResolvedValue([]);
 
     await rebuildPositionsForAddressChain(db, 1, 8453, {
+      skipSpotValuation: true,
       priceProvider: { getHistoricalUsdBatch } as never,
       reconcileOptions: { getLogs, npmAddress: NPM },
     });
@@ -278,6 +280,7 @@ describe('rebuildPositionsForAddressChain', () => {
     const getHistoricalUsdBatch = vi.fn().mockResolvedValue(new Map([[batchKey(8453, POOL_FARM.token0, TS), 5]]));
 
     await rebuildPositionsForAddressChain(db, 1, 8453, {
+      skipSpotValuation: true,
       priceProvider: { getHistoricalUsdBatch } as never,
     });
 
@@ -307,6 +310,7 @@ describe('rebuildPositionsForAddressChain', () => {
       .mockResolvedValue(new Map<string, number | null>([[k0, 4], [k1, null]]));
 
     await rebuildPositionsForAddressChain(db, 1, 8453, {
+      skipSpotValuation: true,
       priceProvider: { getHistoricalUsdBatch } as never,
     });
 
@@ -340,6 +344,7 @@ describe('rebuildPositionsForAddressChain', () => {
     const getHistoricalUsdBatch = vi.fn().mockResolvedValue(new Map());
 
     await rebuildPositionsForAddressChain(db, 1, 8453, {
+      skipSpotValuation: true,
       priceProvider: { getHistoricalUsdBatch } as never,
       reconcileOptions: { getLogs, npmAddress: NPM },
     });
