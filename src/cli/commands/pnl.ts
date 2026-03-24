@@ -6,17 +6,27 @@ import { PositionRepo } from '../../db/repositories/position.repo.js';
 import { calculatePositionPnl } from '../../analytics/pnl.js';
 import { formatUsd, formatPercent, shortenAddress } from '../../utils/format.js';
 import { log } from '../../utils/logger.js';
+import { CLI_HISTORICAL_PRICE_CAVEAT, resolveChainFilter } from '../chainFilter.js';
+
+function nftIdCell(pos: { positionKind: string; nftTokenId: string }): string {
+  return pos.positionKind === 'v3_nft' && pos.nftTokenId.trim() !== '' ? pos.nftTokenId : '-';
+}
 
 export function setupPnlCommand(program: Command): void {
   program
     .command('pnl [address_id]')
-    .description('View PnL Analytics (ROI, Realized, Unrealized PnL)')
-    .action((addressIdStr?: string) => {
+    .description(
+      'View PnL analytics (ROI, realized / unrealized). ' + CLI_HISTORICAL_PRICE_CAVEAT,
+    )
+    .option('-c, --chain <id>', 'Only show PnL for positions on this chain ID (e.g. 8453 for Base)')
+    .action((addressIdStr?: string, options?: { chain?: string }) => {
       try {
+        const chainId = resolveChainFilter(options?.chain);
+
         const db = getDb();
         const addressRepo = new AddressRepo(db);
         const positionRepo = new PositionRepo(db);
-        
+
         let addresses = [];
         if (addressIdStr) {
           const id = parseInt(addressIdStr, 10);
@@ -33,18 +43,29 @@ export function setupPnlCommand(program: Command): void {
         }
 
         for (const addr of addresses) {
-          const positions = positionRepo.findByAddress(addr.id!);
-          
-          console.log(`\nPnL for ${addr.label || addr.address} (ID: ${addr.id})`);
-          
+          const positions = positionRepo.findByAddress(addr.id!, { chainId });
+
+          const chainNote = chainId !== undefined ? ` (chain ${chainId})` : '';
+          console.log(`\nPnL for ${addr.label || addr.address} (ID: ${addr.id})${chainNote}`);
+
           if (positions.length === 0) {
             console.log('  No positions found.');
+            log.info(CLI_HISTORICAL_PRICE_CAVEAT);
             continue;
           }
 
           const table = new Table({
-            head: ['Pool', 'Deposited', 'Current Val', 'Realized', 'Unrealized', 'Total PnL', 'ROI'],
-            style: { head: ['cyan'] }
+            head: [
+              'Pool',
+              'NFT id',
+              'Deposited',
+              'Current Val',
+              'Realized',
+              'Unrealized',
+              'Total PnL',
+              'ROI',
+            ],
+            style: { head: ['cyan'] },
           });
 
           let totalDep = 0;
@@ -57,7 +78,7 @@ export function setupPnlCommand(program: Command): void {
               totalWithdrawnUsd: pos.totalWithdrawnUsd,
               totalHarvestedUsd: pos.totalHarvestedUsd,
               currentValueUsd: pos.currentValueUsd || 0,
-              totalGasCostUsd: pos.totalGasCostUsd
+              totalGasCostUsd: pos.totalGasCostUsd,
             });
 
             totalDep += pos.totalDepositedUsd;
@@ -66,31 +87,33 @@ export function setupPnlCommand(program: Command): void {
 
             table.push([
               shortenAddress(pos.poolAddress, 6),
+              nftIdCell(pos),
               formatUsd(pos.totalDepositedUsd),
               pos.isActive ? formatUsd(pos.currentValueUsd || 0) : '-',
               formatUsd(pnl.realizedPnl),
               formatUsd(pnl.unrealizedPnl),
               formatUsd(pnl.totalPnl),
-              formatPercent(pnl.roi)
+              formatPercent(pnl.roi),
             ]);
           }
-          
-          // Summary row
+
           const totalAllPnl = totalRealized + totalUnrealized;
           const totalRoi = totalDep > 0 ? (totalAllPnl / totalDep) * 100 : 0;
-          
-          table.push([]); // Empty row separator
+
+          table.push([]);
           table.push([
             'TOTAL',
+            '-',
             formatUsd(totalDep),
             '-',
             formatUsd(totalRealized),
             formatUsd(totalUnrealized),
             formatUsd(totalAllPnl),
-            formatPercent(totalRoi)
+            formatPercent(totalRoi),
           ]);
 
           console.log(table.toString());
+          log.info(CLI_HISTORICAL_PRICE_CAVEAT);
         }
       } catch (err) {
         if (err instanceof Error) {

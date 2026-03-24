@@ -6,6 +6,16 @@ const { syncAddress, rebuildPositionsOnlyForAddress } = vi.hoisted(() => ({
   rebuildPositionsOnlyForAddress: vi.fn().mockResolvedValue(undefined),
 }));
 
+const { findByAddressMock, calculatePositionPnlMock } = vi.hoisted(() => ({
+  findByAddressMock: vi.fn().mockReturnValue([]),
+  calculatePositionPnlMock: vi.fn().mockReturnValue({
+    realizedPnl: 0,
+    unrealizedPnl: 0,
+    totalPnl: 0,
+    roi: 0,
+  }),
+}));
+
 vi.mock('../../src/db/connection.js', () => ({
   getDb: vi.fn(() => ({})),
   closeDb: vi.fn(),
@@ -26,9 +36,22 @@ vi.mock('../../src/db/repositories/address.repo.js', () => ({
   }),
 }));
 
+vi.mock('../../src/db/repositories/position.repo.js', () => ({
+  PositionRepo: vi.fn(function PositionRepoMock() {
+    return { findByAddress: findByAddressMock };
+  }),
+}));
+
+vi.mock('../../src/analytics/pnl.js', () => ({
+  calculatePositionPnl: calculatePositionPnlMock,
+}));
+
 import { getDb } from '../../src/db/connection.js';
 import { setupSyncCommand } from '../../src/cli/commands/sync.js';
+import { setupPositionsCommand } from '../../src/cli/commands/positions.js';
+import { setupPnlCommand } from '../../src/cli/commands/pnl.js';
 import { AddressRepo } from '../../src/db/repositories/address.repo.js';
+import { log } from '../../src/utils/logger.js';
 
 const sampleAddr = {
   id: 7,
@@ -91,5 +114,79 @@ describe('CLI sync command', () => {
     await program.parseAsync(['sync', '--chain', '999999'], { from: 'user' });
     expect(syncAddress).not.toHaveBeenCalled();
     expect(rebuildPositionsOnlyForAddress).not.toHaveBeenCalled();
+  });
+});
+
+describe('CLI positions command', () => {
+  let program: Command;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findByAddressMock.mockReturnValue([]);
+    program = new Command();
+    program.exitOverride();
+    (AddressRepo as unknown as ReturnType<typeof vi.fn>).mockImplementation(function () {
+      return {
+        findById: vi.fn().mockReturnValue(sampleAddr),
+        findAll: vi.fn().mockReturnValue([sampleAddr]),
+      };
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue({});
+    setupPositionsCommand(program);
+  });
+
+  it('passes --chain id to PositionRepo.findByAddress', async () => {
+    await program.parseAsync(['positions', '-c', '8453'], { from: 'user' });
+    expect(findByAddressMock).toHaveBeenCalledWith(7, { activeOnly: true, chainId: 8453 });
+  });
+
+  it('passes activeOnly false when --all with --chain', async () => {
+    await program.parseAsync(['positions', '--all', '--chain', '8453'], { from: 'user' });
+    expect(findByAddressMock).toHaveBeenCalledWith(7, { activeOnly: false, chainId: 8453 });
+  });
+
+  it('omits chainId when --chain not set', async () => {
+    await program.parseAsync(['positions'], { from: 'user' });
+    expect(findByAddressMock).toHaveBeenCalledWith(7, { activeOnly: true });
+  });
+
+  it('rejects unknown --chain without querying positions', async () => {
+    const errSpy = vi.spyOn(log, 'error').mockImplementation(() => {});
+    await program.parseAsync(['positions', '--chain', '999999'], { from: 'user' });
+    expect(findByAddressMock).not.toHaveBeenCalled();
+    expect(errSpy.mock.calls[0]?.[0]).toMatch(/Unknown or unsupported chain ID/);
+    errSpy.mockRestore();
+  });
+});
+
+describe('CLI pnl command', () => {
+  let program: Command;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findByAddressMock.mockReturnValue([]);
+    program = new Command();
+    program.exitOverride();
+    (AddressRepo as unknown as ReturnType<typeof vi.fn>).mockImplementation(function () {
+      return {
+        findById: vi.fn().mockReturnValue(sampleAddr),
+        findAll: vi.fn().mockReturnValue([sampleAddr]),
+      };
+    });
+    (getDb as unknown as ReturnType<typeof vi.fn>).mockReturnValue({});
+    setupPnlCommand(program);
+  });
+
+  it('passes --chain id to PositionRepo.findByAddress', async () => {
+    await program.parseAsync(['pnl', '--chain', '8453'], { from: 'user' });
+    expect(findByAddressMock).toHaveBeenCalledWith(7, { chainId: 8453 });
+  });
+
+  it('rejects unknown --chain without querying positions', async () => {
+    const errSpy = vi.spyOn(log, 'error').mockImplementation(() => {});
+    await program.parseAsync(['pnl', '-c', '999999'], { from: 'user' });
+    expect(findByAddressMock).not.toHaveBeenCalled();
+    expect(errSpy.mock.calls[0]?.[0]).toMatch(/Unknown or unsupported chain ID/);
+    errSpy.mockRestore();
   });
 });

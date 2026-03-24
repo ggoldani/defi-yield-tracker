@@ -62,3 +62,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Task 6 — PnL:** `calculatePositionPnl` documents invariants vs `positionBuilder` (deposit/withdraw/exit vs harvest legs; no duplicate harvest in total). **Canonical total:** `withdrawn + harvested + current − deposited − gas`; decomposition unchanged. Non-finite inputs coerced to **0** to avoid NaN in CLI. Extended `tests/unit/pnl.test.ts` (fixtures A–D + NaN + regressions).
+
+### Added
+- **Task 7 — CLI:** `dyt positions` and `dyt pnl` support **`-c, --chain <id>`** (same numeric **CHAINS** validation as `sync`; unknown id lists supported ids). Tables include **NFT id** for **`v3_nft`** rows (**`-`** for **`v2_lp`**). **USD caveat:** command descriptions and a post-table **`log.info`** repeat that totals depend on indexed historical prices (no per-row missing-price flag in DB).
