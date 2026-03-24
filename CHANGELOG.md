@@ -25,3 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transaction enricher (raw API response → structured IndexedTransaction)
 - Sync engine with incremental sync state tracking per address per chain
 - Decoder unit tests covering all Sickle strategy functions (15 tests)
+- DeFiLlama price client (current, historical, batch prices) with native token resolution
+- Price provider with SQLite caching layer (hour-rounded timestamps)
+- Gas cost USD calculator using native currency prices
+- DeFiLlama live API tests (4 tests)
