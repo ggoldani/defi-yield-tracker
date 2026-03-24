@@ -59,3 +59,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rebuildPositionsForAddressChain` now sets **`current_value_usd`** for active positions (Task 5a); **`PositionRebuildDeps.skipSpotValuation`** skips RPC for unit tests.
 - `PositionRepo`: **`current_value_usd = 0`** is stored and loaded as numeric zero (not coerced to `NULL` / omitted on read).
 - `dyt sync --chain`: unknown or unsupported chain id fails with a clear error (lists supported **CHAINS** ids) instead of succeeding with no work (applies to normal sync and `--rebuild-positions`).
+
+### Fixed
+- **Task 6 — PnL:** `calculatePositionPnl` documents invariants vs `positionBuilder` (deposit/withdraw/exit vs harvest legs; no duplicate harvest in total). **Canonical total:** `withdrawn + harvested + current − deposited − gas`; decomposition unchanged. Non-finite inputs coerced to **0** to avoid NaN in CLI. Extended `tests/unit/pnl.test.ts` (fixtures A–D + NaN + regressions).
