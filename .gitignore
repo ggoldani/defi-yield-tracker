@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Internal docs/plans (local only, not pushed to repo)
+docs/
+
 # Build output
 dist/
 
