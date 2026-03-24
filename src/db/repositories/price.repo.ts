@@ -1,6 +1,11 @@
 import type Database from 'better-sqlite3';
 import type { CachedPrice } from '../../types.js';
 
+/** Same bucket as `price_cache.timestamp`; used by `PriceProvider.getHistoricalUsdBatch` keys. */
+export function roundPriceTimestampToHour(timestamp: number): number {
+  return Math.round(timestamp / 3600) * 3600;
+}
+
 export class PriceRepo {
   constructor(private db: Database.Database) {}
 
@@ -46,7 +51,7 @@ export class PriceRepo {
   }
 
   private roundToHour(timestamp: number): number {
-    return Math.round(timestamp / 3600) * 3600;
+    return roundPriceTimestampToHour(timestamp);
   }
 
   private mapRow(row: Record<string, unknown>): CachedPrice {
