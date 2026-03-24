@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Notes
+- **Task 8 — Verification:** Plan Task 8 automated gate: `npm run build`, `npx tsc --noEmit`, `npx vitest run` — green in maintainer run. **Manual** smoke + definition-of-done table: operators follow `README.md` § *Manual smoke (Task 8)* before calling the milestone fully verified.
+
+### Milestone summary — Positions & PnL accuracy (2026-03)
+Single place to orient: indexed transactions → `rebuildPositionsForAddressChain` (NFT reconcile, batch historical USD, V2 vs `v3_nft` keys) → spot **`current_value_usd`** (Task 5a) → **`calculatePositionPnl`** invariants (Task 6) → CLI **`--chain`**, **`--rebuild-positions` / `-r`**, NFT id column, USD caveat (Tasks 4c, 7). Task-level bullets below are unchanged.
+
 ### Added
 - **Positions / PnL pipeline (indexed txs → accurate `positions`):**
   - Versioned SQLite migration (`PRAGMA user_version`) and columns: `positions.position_kind`, `positions.nft_token_id`, `transactions.nft_token_id`; unique key `(address_id, chain_id, pool_address, nft_token_id)` for V2 vs CL NFT rows.
@@ -52,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On-chain Sickle wallet discovery using `viem` to read `sickles[address]` from factory mappings
 - Auto-registration of newly discovered Sickle wallets during the `dyt sync` process
 - Mocked public client BDD tests for discovery logic (3 tests)
+- **Task 7 — CLI:** `dyt positions` and `dyt pnl` support **`-c, --chain <id>`** (same numeric **CHAINS** validation as `sync`; unknown id lists supported ids). Tables include **NFT id** for **`v3_nft`** rows (**`-`** for **`v2_lp`**). **USD caveat:** command descriptions and a post-table **`log.info`** repeat that totals depend on indexed historical prices (no per-row missing-price flag in DB).
 
 ### Changed
 - `TransactionRepo.insert` reports whether a row was inserted (`changes`), so `sync` only rebuilds positions when new transactions are actually written.
@@ -62,6 +69,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Task 6 — PnL:** `calculatePositionPnl` documents invariants vs `positionBuilder` (deposit/withdraw/exit vs harvest legs; no duplicate harvest in total). **Canonical total:** `withdrawn + harvested + current − deposited − gas`; decomposition unchanged. Non-finite inputs coerced to **0** to avoid NaN in CLI. Extended `tests/unit/pnl.test.ts` (fixtures A–D + NaN + regressions).
-
-### Added
-- **Task 7 — CLI:** `dyt positions` and `dyt pnl` support **`-c, --chain <id>`** (same numeric **CHAINS** validation as `sync`; unknown id lists supported ids). Tables include **NFT id** for **`v3_nft`** rows (**`-`** for **`v2_lp`**). **USD caveat:** command descriptions and a post-table **`log.info`** repeat that totals depend on indexed historical prices (no per-row missing-price flag in DB).
