@@ -4,9 +4,12 @@ import { CHAINS } from '../config.js';
 import { log } from '../utils/logger.js';
 import { fetchAllTransactions } from './scanner.js';
 import { enrichTransaction } from './enricher.js';
+import { PriceProvider } from '../prices/provider.js';
 import { TransactionRepo } from '../db/repositories/transaction.repo.js';
 import { PositionRepo } from '../db/repositories/position.repo.js';
 import { KNOWN_POOLS } from '../config/pools.js';
+import { discoverSickleWallet } from './discovery.js';
+import { AddressRepo } from '../db/repositories/address.repo.js';
 
 /**
  * Sync state tracking — stores last synced block per address per chain.
@@ -32,11 +35,6 @@ function updateSyncState(
        last_synced_at = excluded.last_synced_at`,
   ).run(addressId, chainId, lastBlock);
 }
-
-import { discoverSickleWallet } from './discovery.js';
-import { AddressRepo } from '../db/repositories/address.repo.js';
-
-// ... (keep getLastSyncedBlock and updateSyncState imports/functions)
 
 export interface SyncResult {
   chainName: string;
@@ -102,10 +100,13 @@ export async function syncAddressOnChain(
 
   // Enrich and insert
   const txRepo = new TransactionRepo(db);
+  const priceProvider = new PriceProvider(db);
   let inserted = 0;
 
+  const enrichedByHash = new Map<string, Awaited<ReturnType<typeof enrichTransaction>>>();
   for (const rawTx of uniqueTxs) {
-    const enrichedTx = enrichTransaction(rawTx, addressId, chain.id, sickleAddress);
+    const enrichedTx = await enrichTransaction(rawTx, addressId, chain.id, sickleAddress, priceProvider);
+    enrichedByHash.set(rawTx.hash, enrichedTx);
     try {
       txRepo.insert(enrichedTx);
       inserted++;
@@ -127,7 +128,8 @@ export async function syncAddressOnChain(
   const strategyPositions = new Map<string, any>();
   
   for (const rawTx of uniqueTxs) {
-    const enrichedTx = enrichTransaction(rawTx, addressId, chain.id, sickleAddress);
+    const enrichedTx = enrichedByHash.get(rawTx.hash);
+    if (!enrichedTx) continue;
     if (!enrichedTx.isFromSickle) continue;
 
     let matchedPool = undefined;
