@@ -38,3 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dyt positions`: Prints active & historical Sickle LP positions in a formatted table
 - `dyt pnl`: Renders realization, impermanent loss, net PnL, and ROI analytics
 - `dyt history`: Shows recent transaction history with category and gas costs
+- On-chain Sickle wallet discovery using `viem` to read `sickles[address]` from factory mappings
+- Auto-registration of newly discovered Sickle wallets during the `dyt sync` process
+- Mocked public client BDD tests for discovery logic (3 tests)

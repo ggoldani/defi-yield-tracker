@@ -5,6 +5,7 @@ import { log } from '../utils/logger.js';
 import { fetchAllTransactions } from './scanner.js';
 import { enrichTransaction } from './enricher.js';
 import { TransactionRepo } from '../db/repositories/transaction.repo.js';
+import { PositionRepo } from '../db/repositories/position.repo.js';
 
 /**
  * Sync state tracking — stores last synced block per address per chain.
@@ -119,6 +120,50 @@ export async function syncAddressOnChain(
 
   if (uniqueTxs.length > 0) {
     updateSyncState(db, addressId, chain.id, lastBlock);
+  }
+
+  // 7. Update Positions state
+  const posRepo = new PositionRepo(db);
+  // group enriched transactions by the Sickle Strategy target
+  const strategyPositions = new Map<string, any>();
+  
+  for (const rawTx of uniqueTxs) {
+    const enrichedTx = enrichTransaction(rawTx, addressId, chain.id, sickleAddress);
+    if (!enrichedTx.isFromSickle) continue;
+
+    const poolAddr = enrichedTx.to;
+    if (!strategyPositions.has(poolAddr)) {
+      strategyPositions.set(poolAddr, {
+        addressId,
+        chainId: chain.id,
+        protocol: 'Sickle Strategy',
+        poolAddress: poolAddr,
+        token0: '0x000000', token1: '0x000001', // Placeholders
+        token0Symbol: 'TKN0', token1Symbol: 'TKN1',
+        isActive: true,
+        entryTimestamp: enrichedTx.timestamp,
+        totalDeposited0: '0', totalDeposited1: '0',
+        totalWithdrawn0: '0', totalWithdrawn1: '0',
+        totalDepositedUsd: 0, totalWithdrawnUsd: 0,
+        totalHarvestedUsd: 0, totalGasCostUsd: 0,
+      });
+    }
+
+    const pos = strategyPositions.get(poolAddr);
+    pos.totalGasCostUsd += enrichedTx.gasCostUsd || 0;
+    
+    // Naively update status
+    if (enrichedTx.category === 'exit') pos.isActive = false;
+    if (enrichedTx.category === 'deposit') pos.isActive = true;
+  }
+
+  // Persist inferred positions
+  for (const pos of strategyPositions.values()) {
+    try {
+      posRepo.upsert(pos);
+    } catch (e) {
+      log.error(`Failed to upsert position: ${(e as Error).message}`);
+    }
   }
 
   log.success(

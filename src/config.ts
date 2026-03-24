@@ -11,9 +11,10 @@ export const CHAINS: Record<number, ChainConfig> = {
     id: 8453,
     name: 'Base',
     currency: 'ETH',
-    rpcUrl: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
-    explorerApiUrl: 'https://api.basescan.org/api',
-    explorerApiKey: ETHERSCAN_API_KEY,
+    rpcUrl: process.env.BASE_RPC_URL || 'https://base.llamarpc.com',
+    // Using Blockscout as it mimics Etherscan API but allows free L2 access
+    explorerApiUrl: 'https://base.blockscout.com/api',
+    explorerApiKey: '', // Not required for Blockscout
     sickleFactory: '0x71D234A3e1dfC161cc1d081E6496e76627baAc31',
     blockTime: 2,
   },
@@ -21,9 +22,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     id: 137,
     name: 'Polygon',
     currency: 'POL',
-    rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
-    explorerApiUrl: 'https://api.polygonscan.com/api',
-    explorerApiKey: ETHERSCAN_API_KEY,
+    rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com', // fallback handled by public nodes if this fails? Let's use publicnode.
+    explorerApiUrl: 'https://polygon.blockscout.com/api',
+    explorerApiKey: '', // Not required for Blockscout
     sickleFactory: '0x71D234A3e1dfC161cc1d081E6496e76627baAc31',
     blockTime: 2,
   },
@@ -43,9 +44,13 @@ export function getSupportedChainNames(): string[] {
 // These are the same across chains for vfat.io's deployment
 export const SICKLE_CONTRACTS = {
   farmStrategy: '0x5A72C0f4Bf7f3Ddf1370780d405e29149b128A04' as const,
+  farmStrategyV2: '0x172ec723640970363d6cb773db2e60662613c0b7' as const,
   simpleFarmStrategy: '0x9b381108ef12a138a5b7cf231fbbef4f20e72306' as const,
   nftFarmStrategy: '0x3B8886C3f6d3BA4a75D3BEcb3c83864C0C01e1F3' as const,
   sweepStrategy: '0x29D82976C8babb7d5a82c78c6Ef4c2a2dDc64125' as const,
+  rebalanceStrategy: '0x75d57c8d1d16d1045a33dd127929da4f52d59a16' as const,
+  multiFarmStrategy: '0x0ce03650ad3699cacf30200e8c7c5d1c071c48e2' as const,
+  aerodromeSlipstreamStrategy: '0x2f0052779c992c509b0758679b46969418696096' as const,
 };
 
 // ── Known Protocol Factories ─────────────────────

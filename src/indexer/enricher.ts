@@ -16,12 +16,17 @@ export function enrichTransaction(
     return createIndexedTx(tx, addressId, chainId, 'unknown', false);
   }
 
-  // Classify and categorize
+  // Blockscout sometimes omits methodId and functionName.
+  // We can extract the 4-byte selector from the raw input data.
+  const rawInput = tx.input && tx.input !== '0x' ? tx.input : '';
+  const fallbackMethodId = rawInput.length >= 10 ? rawInput.slice(0, 10).toLowerCase() : '0x';
+  const finalMethodId = (tx.methodId && tx.methodId !== '0x' ? tx.methodId : fallbackMethodId).toLowerCase();
+
   const classification = classifyTransaction(
     {
       to: tx.to || '',
       from: tx.from,
-      methodId: tx.methodId || tx.input?.slice(0, 10) || '',
+      methodId: finalMethodId,
       functionName: tx.functionName || '',
     },
     sickleAddress,
