@@ -1,9 +1,9 @@
 import type { ChainConfig } from './types.js';
 
-// ── Etherscan API V2 ─────────────────────────────
-// Single key for all EVM chains. Env vars loaded via Node.js --env-file flag.
+// ── Etherscan API ────────────────────────────────
+// Etherscan V2 unified endpoint requires paid plan for Base/Polygon.
+// Falling back to chain-specific endpoints which accept the same API key.
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
-const ETHERSCAN_V2_BASE = 'https://api.etherscan.io/v2/api';
 
 // ── Supported Chains ─────────────────────────────
 export const CHAINS: Record<number, ChainConfig> = {
@@ -12,7 +12,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Base',
     currency: 'ETH',
     rpcUrl: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
-    explorerApiUrl: ETHERSCAN_V2_BASE,
+    explorerApiUrl: 'https://api.basescan.org/api',
     explorerApiKey: ETHERSCAN_API_KEY,
     sickleFactory: '0x71D234A3e1dfC161cc1d081E6496e76627baAc31',
     blockTime: 2,
@@ -22,7 +22,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'Polygon',
     currency: 'POL',
     rpcUrl: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
-    explorerApiUrl: ETHERSCAN_V2_BASE,
+    explorerApiUrl: 'https://api.polygonscan.com/api',
     explorerApiKey: ETHERSCAN_API_KEY,
     sickleFactory: '0x71D234A3e1dfC161cc1d081E6496e76627baAc31',
     blockTime: 2,

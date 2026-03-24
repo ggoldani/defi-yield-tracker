@@ -16,3 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI entry point stub (`dyt` binary)
 - Vitest test configuration with V8 coverage
 - `.env.example` with Etherscan API V2 single-key setup
+- SQLite database layer with schema (5 tables, 6 indexes)
+- Database connection singleton (WAL mode, foreign keys)
+- Repositories: `AddressRepo`, `TransactionRepo`, `PositionRepo`, `PriceRepo`
+- Unit tests: schema verification and address repository CRUD (9 tests)
