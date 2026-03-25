@@ -3,9 +3,11 @@ import { parseAbi, type Address } from 'viem';
 import type { Position } from '../../src/types.js';
 import type { ChainConfig } from '../../src/types.js';
 import { estimatePositionValueUsd } from '../../src/analytics/positions.js';
+import { getAmountsForLiquidity, getSqrtRatioAtTick, Q96 } from '../../src/analytics/clLiquidityMath.js';
 
 const HOLDER = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Address;
 const PAIR = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as Address;
+const CL_POOL = '0xcccccccccccccccccccccccccccccccccccccccc' as Address;
 const T0 = '0x1111111111111111111111111111111111111111' as Address;
 const T1 = '0x2222222222222222222222222222222222222222' as Address;
 const NPM = '0x827922686190790b37229fd06084350e74485b72' as Address;
@@ -48,7 +50,7 @@ function basePosition(over: Partial<Omit<Position, 'id'>> = {}): Omit<Position, 
   };
 }
 
-describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
+describe('estimatePositionValueUsd (Task 5b CL / 5a V2)', () => {
   let readContract: ReturnType<typeof vi.fn>;
   let getCurrentPrice: ReturnType<typeof vi.fn>;
   let priceProvider: { getCurrentPrice: typeof getCurrentPrice };
@@ -72,7 +74,7 @@ describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
     expect(getCurrentPrice).not.toHaveBeenCalled();
   });
 
-  it('V2: pro-rata reserves × LP balance × spot prices', async () => {
+  it('V2: pro-rata reserves × LP balance × spot prices (unchanged 5a)', async () => {
     const WAD = 10n ** 18n;
     readContract.mockImplementation(async (args: { address: Address; functionName: string }) => {
       const { address, functionName } = args;
@@ -106,42 +108,69 @@ describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
       lpBalanceHolder: HOLDER,
     });
 
-    // LP share = 1e18 / 10e18 = 10% of pool → 200 A, 100 B → 200*1 + 100*2 = 400
     expect(v).toBeCloseTo(400, 5);
   });
 
-  it('V3: NPM liquidity > 0 uses net (deposited − withdrawn) wei × spot', async () => {
+  it('V3 (5b): slot0 + tick liquidity math + tokensOwed × spot (not indexed net)', async () => {
+    const tickLower = -100;
+    const tickUpper = 100;
+    const liquidity = 10n ** 18n;
+    const owed0 = 1n * 10n ** 15n;
+    const owed1 = 2n * 10n ** 15n;
+
+    const sqrtP = getSqrtRatioAtTick(0);
+    expect(sqrtP).toBe(Q96);
+
     readContract.mockImplementation(async (args: { address: Address; functionName: string }) => {
-      if (args.functionName === 'positions' && args.address.toLowerCase() === NPM.toLowerCase()) {
+      const { address, functionName } = args;
+      if (functionName === 'positions' && address.toLowerCase() === NPM.toLowerCase()) {
         return {
           nonce: 0n,
           operator: '0x0000000000000000000000000000000000000000',
           token0: T0,
           token1: T1,
           fee: 1,
-          tickLower: -100,
-          tickUpper: 100,
-          liquidity: 999n,
+          tickLower,
+          tickUpper,
+          liquidity,
           feeGrowthInside0LastX128: 0n,
           feeGrowthInside1LastX128: 0n,
-          tokensOwed0: 0n,
-          tokensOwed1: 0n,
+          tokensOwed0: owed0,
+          tokensOwed1: owed1,
         };
       }
-      if (args.functionName === 'decimals') return 18;
-      throw new Error(`unexpected ${args.functionName}`);
+      if (functionName === 'slot0' && address.toLowerCase() === CL_POOL.toLowerCase()) {
+        return {
+          sqrtPriceX96: sqrtP,
+          tick: 0,
+          observationIndex: 0,
+          observationCardinality: 0,
+          observationCardinalityNext: 0,
+          feeProtocol: 0,
+          unlocked: true,
+        };
+      }
+      if (functionName === 'decimals') return 18;
+      throw new Error(`unexpected ${functionName} @ ${address}`);
     });
 
-    getCurrentPrice.mockImplementation(async () => 1);
+    getCurrentPrice.mockResolvedValue(1);
 
-    const WAD = 10n ** 18n;
+    const sqrtA = getSqrtRatioAtTick(tickLower);
+    const sqrtB = getSqrtRatioAtTick(tickUpper);
+    const { amount0, amount1 } = getAmountsForLiquidity(sqrtP, sqrtA, sqrtB, liquidity);
+    const total0 = amount0 + owed0;
+    const total1 = amount1 + owed1;
+    const expectedUsd = Number(total0) / 1e18 + Number(total1) / 1e18;
+
     const p = basePosition({
       positionKind: 'v3_nft',
+      poolAddress: CL_POOL,
       nftTokenId: '42',
-      totalDeposited0: (2n * WAD).toString(),
-      totalWithdrawn0: WAD.toString(),
-      totalDeposited1: (4n * WAD).toString(),
-      totalWithdrawn1: WAD.toString(),
+      totalDeposited0: (999n * 10n ** 18n).toString(),
+      totalWithdrawn0: '0',
+      totalDeposited1: '0',
+      totalWithdrawn1: '0',
     });
 
     const v = await estimatePositionValueUsd(p, {
@@ -151,11 +180,13 @@ describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
       lpBalanceHolder: HOLDER,
     });
 
-    // net0 = 1 WAD, net1 = 3 WAD, price 1 each → 4 USD
-    expect(v).toBeCloseTo(4, 5);
+    expect(v).toBeCloseTo(expectedUsd, 4);
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address: CL_POOL, functionName: 'slot0' }),
+    );
   });
 
-  it('V3: returns 0 when NPM reports zero liquidity', async () => {
+  it('V3: returns 0 when NPM reports zero liquidity (no slot0 read)', async () => {
     readContract.mockImplementation(async (args: { address: Address; functionName: string }) => {
       if (args.functionName === 'positions') {
         return {
@@ -179,6 +210,7 @@ describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
 
     const p = basePosition({
       positionKind: 'v3_nft',
+      poolAddress: CL_POOL,
       nftTokenId: '1',
       totalDeposited0: (10n ** 18n).toString(),
     });
@@ -191,6 +223,7 @@ describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
     });
     expect(v).toBe(0);
     expect(getCurrentPrice).not.toHaveBeenCalled();
+    expect(readContract).not.toHaveBeenCalledWith(expect.objectContaining({ functionName: 'slot0' }));
   });
 
   it('returns 0 on RPC failure (no throw)', async () => {
@@ -214,6 +247,7 @@ describe('estimatePositionValueUsd (Task 5a spot MVP)', () => {
     const chainNoNpm = { ...baseChain, nftPositionManager: undefined };
     const p = basePosition({
       positionKind: 'v3_nft',
+      poolAddress: CL_POOL,
       nftTokenId: '1',
       totalDeposited0: '1',
     });
@@ -234,5 +268,6 @@ describe('positions valuation ABIs parse', () => {
     expect(() => parseAbi(valuationAbis.erc20)).not.toThrow();
     expect(() => parseAbi(valuationAbis.v2Pair)).not.toThrow();
     expect(() => parseAbi(valuationAbis.npmPositions)).not.toThrow();
+    expect(() => parseAbi(valuationAbis.poolSlot0)).not.toThrow();
   });
 });

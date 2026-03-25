@@ -1,13 +1,14 @@
 /**
- * Task 5a — **Spot-based `current_value_usd` (MVP)** for `positions` rows.
+ * **`current_value_usd`** during `rebuildPositionsForAddressChain`.
  *
- * **Accuracy:** Not tick-accurate for concentrated liquidity (Task 5b). For **V3 / Slipstream** rows
- * we confirm on-chain `liquidity > 0` via NPM, then mark value as **indexed net token wei**
- * `(totalDeposited − totalWithdrawn)` × **DeFiLlama spot** — this ignores price movement inside the
- * position’s tick range and can diverge **~5–15%+** (often more under volatility) from full Uniswap v3
- * math. **V2** uses **Pair `balanceOf(holder)` × reserves / totalSupply**, which matches wallet-held
- * LP on the pair contract; if LP is staked in a gauge that does **not** reduce the Sickle’s Pair
- * `balanceOf`, this will **understate** until gauge balance is integrated.
+ * **V2 (`v2_lp`) — Task 5a:** Pair **`balanceOf` × reserves / totalSupply** × **`getCurrentPrice`**.
+ * Gauge caveat: staked LP off Pair `balanceOf` can understate until gauge support.
+ *
+ * **V3 / Slipstream (`v3_nft`) — Task 5b:** Tick-accurate principal from Uniswap v3–style
+ * **`getAmountsForLiquidity`** using pool **`slot0.sqrtPriceX96`** and NPM **`tickLower` / `tickUpper` /
+ * `liquidity`**, plus **uncollected fees** **`tokensOwed0` / `tokensOwed1`**. The 5a CL shortcut
+ * (**indexed net × spot**) is **not** used for open NFT positions. With **`liquidity === 0`** we return
+ * **0** USD (no “fees-only” mark — fees accrue with position liquidity in this model).
  *
  * **Failures:** RPC errors → `log.warn`, return **0** (never throws to callers).
  */
@@ -16,6 +17,7 @@ import { parseAbi, type Address, type PublicClient } from 'viem';
 import type { ChainConfig, Position } from '../types.js';
 import type { PriceProvider } from '../prices/provider.js';
 import { log } from '../utils/logger.js';
+import { getAmountsForLiquidity, getSqrtRatioAtTick } from './clLiquidityMath.js';
 
 /** Exported for unit tests that assert ABI strings parse under viem. */
 export const valuationAbis = {
@@ -28,11 +30,15 @@ export const valuationAbis = {
   npmPositions: [
     'function positions(uint256 tokenId) view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)',
   ] as const,
+  poolSlot0: [
+    'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
+  ] as const,
 };
 
 const erc20Abi = parseAbi(valuationAbis.erc20);
 const v2PairAbi = parseAbi(valuationAbis.v2Pair);
 const npmAbi = parseAbi(valuationAbis.npmPositions);
+const poolSlot0Abi = parseAbi(valuationAbis.poolSlot0);
 
 export type EstimatePositionValueUsdDeps = {
   publicClient: Pick<PublicClient, 'readContract'>;
@@ -47,7 +53,7 @@ export type EstimatePositionValueUsdDeps = {
 
 function warnCtx(position: Omit<Position, 'id' | 'currentValueUsd'>, extra: Record<string, unknown>) {
   return JSON.stringify({
-    scope: 'positionValuation5a',
+    scope: 'positionValuation',
     addressId: position.addressId,
     chainId: position.chainId,
     pool: position.poolAddress,
@@ -55,6 +61,12 @@ function warnCtx(position: Omit<Position, 'id' | 'currentValueUsd'>, extra: Reco
     nftTokenId: position.nftTokenId,
     ...extra,
   });
+}
+
+function asInt24(v: unknown): number {
+  if (typeof v === 'bigint') return Number(v);
+  if (typeof v === 'number') return v;
+  return Number(v);
 }
 
 async function readDecimals(client: Pick<PublicClient, 'readContract'>, token: Address): Promise<number> {
@@ -70,30 +82,53 @@ async function readDecimals(client: Pick<PublicClient, 'readContract'>, token: A
   }
 }
 
-function netWei(deposited: string, withdrawn: string): bigint {
-  try {
-    const d = BigInt(deposited || '0');
-    const w = BigInt(withdrawn || '0');
-    return d > w ? d - w : 0n;
-  } catch {
-    return 0n;
-  }
-}
+type NpmPositionParsed = {
+  token0: Address;
+  token1: Address;
+  liquidity: bigint;
+  tickLower: number;
+  tickUpper: number;
+  tokensOwed0: bigint;
+  tokensOwed1: bigint;
+};
 
-function npmPositionRow(r: unknown): { token0: Address; token1: Address; liquidity: bigint } {
+function npmPositionRow(r: unknown): NpmPositionParsed {
   if (Array.isArray(r)) {
     return {
       token0: r[2] as Address,
       token1: r[3] as Address,
-      liquidity: r[7] as bigint,
+      tickLower: asInt24(r[5]),
+      tickUpper: asInt24(r[6]),
+      liquidity: BigInt(r[7] as bigint),
+      tokensOwed0: BigInt(r[10] as bigint),
+      tokensOwed1: BigInt(r[11] as bigint),
     };
   }
   const o = r as {
     token0: Address;
     token1: Address;
+    tickLower: unknown;
+    tickUpper: unknown;
     liquidity: bigint;
+    tokensOwed0: bigint;
+    tokensOwed1: bigint;
   };
-  return { token0: o.token0, token1: o.token1, liquidity: o.liquidity };
+  return {
+    token0: o.token0,
+    token1: o.token1,
+    tickLower: asInt24(o.tickLower),
+    tickUpper: asInt24(o.tickUpper),
+    liquidity: BigInt(o.liquidity),
+    tokensOwed0: BigInt(o.tokensOwed0),
+    tokensOwed1: BigInt(o.tokensOwed1),
+  };
+}
+
+function slot0SqrtPrice(r: unknown): bigint {
+  if (Array.isArray(r)) {
+    return BigInt(r[0] as bigint);
+  }
+  return BigInt((r as { sqrtPriceX96: bigint }).sqrtPriceX96);
 }
 
 async function spotLegUsd(
@@ -208,21 +243,32 @@ async function valueV3(
     return 0;
   }
 
-  const n0 = netWei(position.totalDeposited0, position.totalWithdrawn0);
-  const n1 = netWei(position.totalDeposited1, position.totalWithdrawn1);
+  const slot0Raw = await deps.publicClient.readContract({
+    address: position.poolAddress,
+    abi: poolSlot0Abi,
+    functionName: 'slot0',
+  });
+  const sqrtPriceX96 = slot0SqrtPrice(slot0Raw);
+
+  const sqrtLower = getSqrtRatioAtTick(row.tickLower);
+  const sqrtUpper = getSqrtRatioAtTick(row.tickUpper);
+
+  const { amount0: a0, amount1: a1 } = getAmountsForLiquidity(sqrtPriceX96, sqrtLower, sqrtUpper, row.liquidity);
+
+  const total0 = a0 + row.tokensOwed0;
+  const total1 = a1 + row.tokensOwed1;
 
   const dec0 = await readDecimals(deps.publicClient, position.token0);
   const dec1 = await readDecimals(deps.publicClient, position.token1);
 
-  const usd0 = await spotLegUsd(deps.priceProvider, deps.chain.id, position.token0, n0, dec0);
-  const usd1 = await spotLegUsd(deps.priceProvider, deps.chain.id, position.token1, n1, dec1);
+  const usd0 = await spotLegUsd(deps.priceProvider, deps.chain.id, position.token0, total0, dec0);
+  const usd1 = await spotLegUsd(deps.priceProvider, deps.chain.id, position.token1, total1, dec1);
 
   return Math.max(0, usd0 + usd1);
 }
 
 /**
  * Non-negative USD mark for an **active** position; **inactive** → `0` (no RPC).
- * See module doc: **5a** spot MVP with documented error band vs tick-exact valuation.
  */
 export async function estimatePositionValueUsd(
   position: Omit<Position, 'id' | 'currentValueUsd'>,
