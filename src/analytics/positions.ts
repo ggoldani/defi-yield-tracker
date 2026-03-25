@@ -4,7 +4,7 @@
  * **Accuracy:** Not tick-accurate for concentrated liquidity (Task 5b). For **V3 / Slipstream** rows
  * we confirm on-chain `liquidity > 0` via NPM, then mark value as **indexed net token wei**
  * `(totalDeposited − totalWithdrawn)` × **DeFiLlama spot** — this ignores price movement inside the
- * position’s tick range and can diverge **~5–15%** (or more in volatile moves) from full Uniswap v3
+ * position’s tick range and can diverge **~5–15%+** (often more under volatility) from full Uniswap v3
  * math. **V2** uses **Pair `balanceOf(holder)` × reserves / totalSupply**, which matches wallet-held
  * LP on the pair contract; if LP is staked in a gauge that does **not** reduce the Sickle’s Pair
  * `balanceOf`, this will **understate** until gauge balance is integrated.
