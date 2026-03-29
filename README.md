@@ -32,7 +32,7 @@ Run the CLI via `node bin/dyt.js <command>` or link `dyt` globally.
 
 Run on your machine after `npm run build` and `.env` configured. Tick when done.
 
-- [ ] **1.** `dyt add 0x0000000000000000000000000000000000000000` (or use existing tracked id).
+- [ ] **1.** `dyt add <YOUR_EOA>` (use a wallet you control and are willing to index) or an existing tracked id from the DB.
 - [ ] **2.** `dyt sync -c 8453` (or `dyt sync <id> -c 8453`) until txs index.
 - [ ] **3.** `dyt positions` / `dyt pnl` and again with `-c 8453` if multi-chain.
 - [ ] **4.** `dyt sync --rebuild-positions -c 8453` — **row counts and USD totals** match step 3 (no duplicate inflation).

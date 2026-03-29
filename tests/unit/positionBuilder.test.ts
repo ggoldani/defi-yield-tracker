@@ -16,7 +16,8 @@ import { PositionRepo } from '../../src/db/repositories/position.repo.js';
 const POOL_FARM = KNOWN_POOLS.find((p) => p.id === 'base-farm-usdz-usdc')!;
 const POOL_CL = KNOWN_POOLS.find((p) => p.id === 'base-slipstream-cbbtc-weth')!;
 
-const EOA = '0x0000000000000000000000000000000000000000' as Address;
+/** Placeholder EOA for unit tests only — not a real wallet. */
+const EOA = '0x1000000000000000000000000000000000000001' as Address;
 const SICKLE = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Address;
 const NPM = '0x827922686190790b37229fd06084350e74485b72' as Address;
 const ZERO = '0x0000000000000000000000000000000000000000' as Address;

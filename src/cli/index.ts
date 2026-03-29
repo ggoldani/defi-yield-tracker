@@ -5,6 +5,8 @@ import { setupSyncCommand } from './commands/sync.js';
 import { setupPositionsCommand } from './commands/positions.js';
 import { setupPnlCommand } from './commands/pnl.js';
 import { setupHistoryCommand } from './commands/history.js';
+import { setupListCommand } from './commands/list.js';
+import { setupRemoveCommand } from './commands/remove.js';
 import { log } from '../utils/logger.js';
 import fs from 'node:fs';
 
@@ -25,6 +27,8 @@ export function runCli(): void {
   setupPositionsCommand(program);
   setupPnlCommand(program);
   setupHistoryCommand(program);
+  setupListCommand(program);
+  setupRemoveCommand(program);
 
   // Clean up database connection on exit
   const cleanup = () => {
